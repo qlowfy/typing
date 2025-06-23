@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>typing...</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Roboto Mono', monospace;
+            background-color: #2c2e36;
+            color: #e2e2e2;
+        }
+        .cursor {
+            animation: blink 1s step-end infinite;
+        }
+        @keyframes blink {
+            from, to { background-color: transparent }
+            50% { background-color: #e2e2e2; }
+        }
+        #text-display-container.faded {
+            opacity: 0.5;
+        }
+        .correct {
+            color: #ffffff;
+        }
+        .incorrect {
+            color: #ff5555;
+        }
+        .default {
+            color: #6c6e78;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+    <main class="w-full max-w-4xl mx-auto p-4 flex flex-col items-center justify-center gap-8">
+        <h1 class="text-4xl font-bold text-yellow-400">typing...</h1>
+        
+        <!-- Stats Display -->
+        <div id="stats-container" class="text-2xl font-semibold text-white w-full max-w-2xl flex justify-around items-center p-4 rounded-lg bg-gray-800/50 transition-opacity duration-300 opacity-0">
+            <div>
+                <span id="wpm">0</span>
+                <span class="text-sm text-gray-400">WPM</span>
+            </div>
+            <div>
+                <span id="accuracy">100</span>
+                <span class="text-sm text-gray-400">% Acc</span>
+            </div>
+            <div>
+                <span id="timer">60</span>
+                <span class="text-sm text-gray-400">s</span>
+            </div>
+        </div>
+        
+        <!-- Typing Area -->
+        <div id="text-display-container" class="relative w-full max-w-2xl text-2xl leading-relaxed tracking-wider p-4 rounded-lg bg-gray-800/30">
+            <div id="text-display" class="select-none filter blur-sm">
+                <!-- Text will be injected by JS -->
+            </div>
+            <div id="focus-overlay" class="absolute inset-0 flex items-center justify-center text-white text-xl cursor-pointer">
+                Click here or start typing to begin
+            </div>
+        </div>
+
+        <!-- Restart Button -->
+        <button id="restart-btn" class="px-6 py-2 bg-yellow-400 text-gray-900 font-bold rounded-lg hover:bg-yellow-500 transition-all duration-300">
+            Restart
+        </button>
+        
+        <!-- Hidden input to capture keystrokes on mobile -->
+        <input type="text" id="mobile-input" class="absolute opacity-0">
+    </main>
+
+    <script>
+        const textDisplay = document.getElementById('text-display');
+        const textDisplayContainer = document.getElementById('text-display-container');
+        const statsContainer = document.getElementById('stats-container');
+        const wpmEl = document.getElementById('wpm');
+        const accuracyEl = document.getElementById('accuracy');
+        const timerEl = document.getElementById('timer');
+        const restartBtn = document.getElementById('restart-btn');
+        const focusOverlay = document.getElementById('focus-overlay');
+        const mobileInput = document.getElementById('mobile-input');
+
+        const QUOTES = [
+            "The quick brown fox jumps over the lazy dog. The lazy dog slept in the sun.",
+            "To be, or not to be, that is the question. Whether 'tis nobler in the mind to suffer the slings and arrows of outrageous fortune.",
+            "Success is not final, failure is not fatal: it is the courage to continue that counts. The future belongs to those who believe in the beauty of their dreams.",
+            "In three words I can sum up everything I've learned about life: it goes on. The only way to do great work is to love what you do.",
+            "The journey of a thousand miles begins with a single step. Do not wait to strike till the iron is hot; but make it hot by striking."
+        ];
+
+        let timer;
+        let timeRemaining = 60;
+        let testActive = false;
+        let currentIndex = 0;
+        let correctChars = 0;
+        let incorrectChars = 0;
+        let totalTypedChars = 0;
+        
+        function getRandomQuote() {
+            return QUOTES[Math.floor(Math.random() * QUOTES.length)];
+        }
+
+        function initializeTest() {
+            // Reset state
+            clearInterval(timer);
+            testActive = false;
+            timeRemaining = 60;
+            currentIndex = 0;
+            correctChars = 0;
+            incorrectChars = 0;
+            totalTypedChars = 0;
+
+            // Reset UI
+            statsContainer.classList.add('opacity-0');
+            wpmEl.textContent = '0';
+            accuracyEl.textContent = '100';
+            timerEl.textContent = timeRemaining;
+            
+            // Load new quote
+            const quote = getRandomQuote();
+            textDisplay.innerHTML = '';
+            quote.split('').forEach(char => {
+                const charSpan = document.createElement('span');
+                charSpan.textContent = char;
+                charSpan.classList.add('default');
+                textDisplay.appendChild(charSpan);
+            });
+
+            // Set initial cursor
+            if (textDisplay.children.length > 0) {
+                textDisplay.children[0].classList.add('cursor');
+            }
+            
+            // Show focus overlay
+            textDisplay.classList.add('blur-sm');
+            focusOverlay.classList.remove('hidden');
+        }
+
+        function startTest() {
+            if (testActive) return;
+            testActive = true;
+            statsContainer.classList.remove('opacity-0');
+
+            timer = setInterval(() => {
+                timeRemaining--;
+                timerEl.textContent = timeRemaining;
+                updateWPM();
+
+                if (timeRemaining <= 0) {
+                    endTest();
+                }
+            }, 1000);
+        }
+
+        function endTest() {
+            clearInterval(timer);
+            testActive = false;
+            textDisplayContainer.classList.add('faded');
+            // Give final WPM calculation
+            updateWPM(true);
+        }
+
+        function updateWPM(isFinal = false) {
+             if (totalTypedChars > 0) {
+                const durationInMinutes = (60 - (isFinal ? 0 : timeRemaining)) / 60;
+                if (durationInMinutes > 0) {
+                   const wpm = (totalTypedChars / 5) / durationInMinutes;
+                   wpmEl.textContent = Math.round(wpm);
+                }
+            }
+        }
+
+        function updateAccuracy() {
+            if (totalTypedChars === 0) {
+                accuracyEl.textContent = '100';
+                return;
+            }
+            const accuracy = (correctChars / totalTypedChars) * 100;
+            accuracyEl.textContent = Math.round(accuracy);
+        }
+        
+        function handleKeyDown(e) {
+            // Start test on first keypress
+            if (!testActive && timeRemaining > 0) {
+                startTest();
+            }
+            if (!testActive) return;
+            
+            const key = e.key;
+            const characters = textDisplay.children;
+            
+            if (currentIndex >= characters.length) {
+                return; // Test is finished
+            }
+
+            const currentCharacterSpan = characters[currentIndex];
+            const expectedChar = currentCharacterSpan.textContent;
+
+            // Handle backspace
+            if (key === 'Backspace') {
+                if (currentIndex > 0) {
+                    // Remove cursor from current
+                    currentCharacterSpan.classList.remove('cursor');
+                    
+                    // Move to previous
+                    currentIndex--;
+                    totalTypedChars--; // Only decrement if you want backspace to affect WPM negatively
+                    
+                    const previousCharSpan = characters[currentIndex];
+
+                    // Recalculate stats based on the removed character's state
+                    if (previousCharSpan.classList.contains('correct')) {
+                        correctChars--;
+                    } else if(previousCharSpan.classList.contains('incorrect')) {
+                        incorrectChars--;
+                    }
+
+                    // Reset styling and add cursor
+                    previousCharSpan.className = 'default cursor';
+                    updateAccuracy();
+                }
+                return;
+            }
+
+            // Ignore special keys
+            if (key.length > 1) {
+                return;
+            }
+            
+            totalTypedChars++;
+
+            // Handle correct/incorrect character
+            if (key === expectedChar) {
+                currentCharacterSpan.className = 'correct';
+                correctChars++;
+            } else {
+                currentCharacterSpan.className = 'incorrect';
+                incorrectChars++;
+                // Handle spacebar errors
+                if (expectedChar === ' ') {
+                    currentCharacterSpan.innerHTML = '&nbsp;'; // To show the red background
+                }
+            }
+            
+            // Move cursor to the next character
+            currentIndex++;
+            
+            if (currentIndex < characters.length) {
+                characters[currentIndex].classList.add('cursor');
+            } else {
+                // End of test
+                endTest();
+            }
+
+            updateAccuracy();
+        }
+
+        function setupFocus() {
+            textDisplayContainer.classList.remove('faded');
+            textDisplay.classList.remove('blur-sm');
+            focusOverlay.classList.add('hidden');
+            // For mobile, focus the hidden input to bring up keyboard
+            mobileInput.focus();
+        }
+
+        // Event Listeners
+        document.addEventListener('keydown', handleKeyDown);
+        restartBtn.addEventListener('click', initializeTest);
+        
+        // Handle focus for desktop and mobile
+        textDisplayContainer.addEventListener('click', setupFocus);
+
+        // Initialize on page load
+        window.onload = initializeTest;
+    </script>
+</body>
+</html>
